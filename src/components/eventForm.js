@@ -13,6 +13,7 @@ import {
   Map,
   useMap,
   useAdvancedMarkerRef,
+  useMapsLibrary,
 } from "@vis.gl/react-google-maps";
 import PlaceAutocomplete from './placeAutocomplete';
 
@@ -71,6 +72,33 @@ export default function EventForm() {
     return null;
   };  
 
+  function initMap() {
+    var directionsService = new google.maps.DirectionsService();
+    var directionsRenderer = new google.maps.DirectionsRenderer();
+    var chicago = new google.maps.LatLng(41.850033, -87.6500523);
+    var mapOptions = {
+      zoom:7,
+      center: chicago
+    }
+    var map = new google.maps.Map(document.getElementById('map'), mapOptions);
+    directionsRenderer.setMap(map);
+  }
+  
+  function calcRoute() {
+    var start = document.getElementById('start').value;
+    var end = document.getElementById('end').value;
+    var request = {
+      origin: start,
+      destination: end,
+      travelMode: 'DRIVING'
+    };
+    directionsService.route(request, function(result, status) {
+      if (status == 'OK') {
+        directionsRenderer.setDirections(result);
+      }
+    });
+  }
+
   return (
     <form 
       onSubmit={handleSubmit} 
@@ -84,7 +112,7 @@ export default function EventForm() {
         >Deep Space Event Planner</h2>
         <EventInput name="eventName" placeholder="Event Name" value={formData.eventName} onChange={handleChange} />
 
-        <EventInput name="location" placeholder="Location" value={formData.location} onFocus={handleLocationFocus} />
+        <EventInput name="location" placeholder="Location" value={formData.location} onFocus={handleLocationFocus} readOnly={true}/>
 
         <TimeSelector handleTimeChange={handleTimeChange} />
         <Button
@@ -98,16 +126,19 @@ export default function EventForm() {
       }`}>
         <APIProvider
           apiKey={process.env.NEXT_PUBLIC_PLACES_API_KEY}
+          
           solutionChannel="GMP_devsite_samples_v3_rgmautocomplete"
         >
           <Map
             mapId={"bf51a910020fa25a"}
             defaultCenter={{lat: 22.54992, lng: 0}}
+            defaultZoom={1}
             gestureHandling={'greedy'}
             disableDefaultUI={true}
           >
             <AdvancedMarker ref={markerRef} position={null} />
           </Map>
+          <Directions />
           <MapControl position={ControlPosition.TOP}>
             <div className="pt-4 w-full">
               <PlaceAutocomplete onPlaceSelect={setSelectedPlace} onBack={handleBack} onClick={handleRecommendationClick} />
@@ -119,4 +150,63 @@ export default function EventForm() {
       </div>
     </form>
   );
+}
+
+function Directions() {
+  const map = useMap();
+  const routesLibrary = useMapsLibrary("routes");
+  const [directionsService, setDirectionsSerive] = useState();
+  const [directionsRenderer, setDirectionsRenderer] = useState();
+  const [routes, setRoutes] = useState([])
+  const [routeIndex, setRouteIndex] = useState(0)
+  const selected = routes[routeIndex]
+  const leg = selected?.legs[0]
+
+  useEffect(() => {
+    if (!routesLibrary || !map) return;
+    setDirectionsSerive(new routesLibrary.DirectionsService());
+    setDirectionsRenderer(new routesLibrary.DirectionsRenderer({ map }));
+  },[routesLibrary, map])
+
+  useEffect(() => {
+    if (!directionsService || !directionsRenderer) return;
+    directionsService.route({
+      origin: "100 Front St, Toronto ON",
+      destination: "500 College St, Toronto ON",
+      travelMode: google.maps.TravelMode.DRIVING,
+      provideRouteAlternatives: true,
+    }).then(response => {
+      console.log(response)
+      directionsRenderer.setDirections(response)
+      setRoutes(response.routes)
+    })
+  },[directionsService, directionsRenderer])
+
+  useEffect(() => {
+    if (!directionsRenderer) return;
+    directionsRenderer.setRouteIndex(routeIndex);
+  }, [routeIndex, directionsRenderer])
+
+  if (!leg) return null;
+  return (
+    <div className='directions'>
+      <h2>{selected.summary}</h2>
+      <p>
+        {leg.start_address.split(",")[0]} to {leg.end_address.split(",")[0]}
+      </p>
+      <p>Distance: {leg.distance?.text}</p>
+      <p>Duration: {leg.duration?.text}</p>
+
+      <h2>Other Routes</h2>
+      <ul>
+        {routes.map((route, index) => (
+          <li key={route.summary}>
+            <button onClick={() => setRouteIndex(index)}>
+              {route.summary}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
